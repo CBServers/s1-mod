@@ -210,6 +210,37 @@ namespace gsc
 			}
 		}
 
+		// Zombies and Survival run under the mp environment, but get their own script folders
+		std::string get_game_folder()
+		{
+			if (game::environment::is_sp())
+			{
+				return "sp";
+			}
+
+			switch (game::Com_GetCurrentCoDPlayMode())
+			{
+			case game::CODPLAYMODE_ZOMBIES:
+				return "zm";
+			case game::CODPLAYMODE_SURVIVAL:
+				return "sv";
+			case game::CODPLAYMODE_NONE:
+				break; // Play mode not set up yet, fall back to the launch flag
+			default:
+				return "mp";
+			}
+
+			switch (game::environment::get_real_mode())
+			{
+			case launcher::mode::zombies:
+				return "zm";
+			case launcher::mode::survival:
+				return "sv";
+			default:
+				return "mp";
+			}
+		}
+
 		void load_scripts(const std::filesystem::path& root_dir)
 		{
 			const auto load = [&root_dir](const std::filesystem::path& folder) -> void
@@ -226,23 +257,14 @@ namespace gsc
 			load(base_dir);
 
 			const auto* map_name = game::Dvar_FindVar("mapname");
+			const std::filesystem::path game_folder = get_game_folder();
 
-			if (game::environment::is_sp())
+			load(base_dir / game_folder);
+
+			load(base_dir / game_folder / map_name->current.string);
+
+			if (!game::environment::is_sp())
 			{
-				const std::filesystem::path game_folder = "sp";
-
-				load(base_dir / game_folder);
-
-				load(base_dir / game_folder / map_name->current.string);
-			}
-			else
-			{
-				const std::filesystem::path game_folder = "mp";
-
-				load(base_dir / game_folder);
-
-				load(base_dir / game_folder / map_name->current.string);
-
 				const auto* game_type = game::Dvar_FindVar("g_gametype");
 				load(base_dir / game_folder / game_type->current.string);
 			}
