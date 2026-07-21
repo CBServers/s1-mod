@@ -36,6 +36,20 @@ namespace party
 
 		int sv_maxclients;
 
+		// svs.clients is only allocated for sv_maxclients entries, so going past that reads out of bounds
+		void set_svs_numclients(const int value)
+		{
+			const auto allocated = game::Dvar_FindVar("sv_maxclients")->current.integer;
+			if (value < 1 || value > allocated)
+			{
+				console::info("svs_numclients must be between 1 and sv_maxclients (%i)\n", allocated);
+				return;
+			}
+
+			*game::mp::svs_numclients = value;
+			console::info("svs_numclients set to %i\n", value);
+		}
+
 		utils::info_string get_info()
 		{
 			utils::info_string info;
@@ -535,6 +549,21 @@ namespace party
 				game::engine::SV_GameSendServerCommand(-1, game::SV_CMD_CAN_IGNORE, utils::string::va("%c \"%s\"", 84, message.c_str()));
 				printf("%s\n", message.data());
 			});
+
+			if (game::environment::is_mp())
+			{
+				command::add("svs_numclients", [](const command::params& params)
+				{
+					if (params.size() < 2)
+					{
+						console::info("svs_numclients is %i (sv_maxclients %i)\n", *game::mp::svs_numclients,
+						              game::Dvar_FindVar("sv_maxclients")->current.integer);
+						return;
+					}
+
+					set_svs_numclients(std::atoi(params.get(1)));
+				});
+			}
 
 			utils::hook::call(0x14048811C, didyouknow_stub); // allow custom didyouknow based on sv_motd
 
