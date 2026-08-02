@@ -248,6 +248,12 @@ namespace party
 		return sv_maxclients;
 	}
 
+	std::string get_raw_host_name()
+	{
+		const auto* host_name = reinterpret_cast<const char*>(0x141646CC4);
+		return std::string(host_name, strnlen(host_name, 256));
+	}
+
 	std::string get_public_server_name()
 	{
 		// In menu, or we're the host of a listen server (not a remote dedicated server).
@@ -262,8 +268,7 @@ namespace party
 			return {};
 		}
 
-		const auto* host_name = reinterpret_cast<const char*>(0x141646CC4);
-		const std::string raw(host_name, strnlen(host_name, 256));
+		const std::string raw = get_raw_host_name();
 
 		// A private match advertises the host's player name as the server name.
 		const auto* name_dvar = game::Dvar_FindVar("name");
@@ -686,8 +691,8 @@ namespace party
 					return;
 				}
 
-				// Only block when explicitly closed ("0"); a missing field stays joinable.
-				if (info.get("joinable") == "0")
+				// Block only when explicitly closed ("0", never sent by dedis/older builds); LAN/loopback stay joinable.
+				if (info.get("joinable") == "0" && network::is_valid_public_ip(target))
 				{
 					const auto* error_msg = "This match is not open to joining. Ask the host to open it from the pause menu.";
 					console::error("%s\n", error_msg);
