@@ -14,6 +14,7 @@ namespace discord
 		std::string gametype;    // friendly gametype name
 		std::string mode;        // short key: "mp" / "zm" / "sv" / "sp"
 		std::string server_name; // public dedicated server only, else empty
+		std::string match_id;    // opaque identity of the match, shared by everyone in it
 		int players{0};
 		int max_players{0};
 	};
