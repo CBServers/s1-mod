@@ -271,6 +271,8 @@ project "common"
 kind "StaticLib"
 language "C++"
 
+buildoptions {"/utf-8"}
+
 files {"./src/common/**.hpp", "./src/common/**.cpp"}
 
 includedirs {"./src/common", "%{prj.location}/src"}
@@ -298,6 +300,8 @@ kind "WindowedApp"
 language "C++"
 
 targetname "s1x"
+
+buildoptions {"/utf-8"}
 
 pchheader "std_include.hpp"
 pchsource "src/client/std_include.cpp"
