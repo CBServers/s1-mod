@@ -50,7 +50,7 @@ jobs:
         run: msbuild /m /v:minimal /p:Configuration=${{matrix.configuration}} /p:Platform=x64 build/s1x.sln
 
       - name: Upload ${{matrix.configuration}} binary
-        if: matrix.configuration == 'Release' && github.repository_owner == 'CBServers' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        if: matrix.configuration == 'Release' && github.repository_owner == 'CBServers' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/develop')
         uses: actions/upload-artifact@v4.4.0
         with:
           name: ${{matrix.configuration}} Binary
@@ -58,7 +58,7 @@ jobs:
             build/bin/x64/${{matrix.configuration}}/s1x.exe
             
       - name: Upload ${{matrix.configuration}} data artifacts
-        if: matrix.configuration == 'Release' && github.repository_owner == 'CBServers' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        if: matrix.configuration == 'Release' && github.repository_owner == 'CBServers' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/develop')
         uses: actions/upload-artifact@v4.4.0
         with:
           name: ${{matrix.configuration}} data artifacts
@@ -69,7 +69,7 @@ jobs:
     name: Deploy artifacts
     needs: build
     runs-on: windows-2022
-    if: github.repository_owner == 'CBServers' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    if: github.repository_owner == 'CBServers' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/develop')
     steps:
       - name: Download Release binaries
         uses: actions/download-artifact@v4.1.8
@@ -84,18 +84,26 @@ jobs:
 
       - name: Download hashing executable
         run: |
-          Invoke-WebRequest -Uri "https://github.com/CBServers/updater/releases/download/v1.0.0/update-hasher.exe" -OutFile "update-hasher.exe"
+          Invoke-WebRequest -Uri "https://github.com/CBServers/updater/releases/latest/download/update-hasher.exe" -OutFile "update-hasher.exe"
 
       - name: Generate hashed.json
         run: |
           .\update-hasher.exe
 
-      - name: Move files to s1x folder and rename hashes
+      - name: Set artifact folder name
         run: |
-          mkdir s1x
-          Move-Item -Path .\s1x.exe -Destination .\s1x\
-          Move-Item -Path .\data -Destination .\s1x\
-          mv hashed.json s1x.json
+          if ("${{ github.ref }}" -eq "refs/heads/develop") {
+            echo "ARTIFACT_FOLDER=s1x-dev" >> $env:GITHUB_ENV
+          } else {
+            echo "ARTIFACT_FOLDER=s1x" >> $env:GITHUB_ENV
+          }
+
+      - name: Move files to artifact folder and rename hashes
+        run: |
+          mkdir ${{ env.ARTIFACT_FOLDER }}
+          Move-Item -Path .\s1x.exe -Destination .\${{ env.ARTIFACT_FOLDER }}\
+          Move-Item -Path .\data -Destination .\${{ env.ARTIFACT_FOLDER }}\
+          mv hashed.json ${{ env.ARTIFACT_FOLDER }}.json
 
       - name: Clone updater
         run: |
@@ -108,10 +116,14 @@ jobs:
 
       - name: Copy files to updater and cleanup
         run: |
-          Copy-Item -Path .\s1x.json -Destination .\updater\updater\ -Force
-          Copy-Item -Path .\s1x\* -Destination .\updater\updater\s1x\ -Recurse -Force
-          Remove-Item -Path .\s1x.json -Force
-          Remove-Item -Path .\s1x -Recurse -Force
+          $target = '.\updater\updater\${{ env.ARTIFACT_FOLDER }}'
+          New-Item -ItemType Directory -Path $target -Force | Out-Null
+          # Wipe the payload so files dropped from the build stop being shipped
+          Get-ChildItem -Path $target -Force | Remove-Item -Recurse -Force
+          Copy-Item -Path .\${{ env.ARTIFACT_FOLDER }}.json -Destination .\updater\updater\ -Force
+          Copy-Item -Path .\${{ env.ARTIFACT_FOLDER }}\* -Destination $target\ -Recurse -Force
+          Remove-Item -Path .\${{ env.ARTIFACT_FOLDER }}.json -Force
+          Remove-Item -Path .\${{ env.ARTIFACT_FOLDER }} -Recurse -Force
           Remove-Item -Path .\update-hasher.exe -Force
 
       - name: Push changes to updater
