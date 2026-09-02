@@ -5,6 +5,7 @@
 #include "game/dvars.hpp"
 
 #include "console.hpp"
+#include "mechanics.hpp"
 
 #include <utils/hook.hpp>
 #include <utils/string.hpp>
@@ -128,6 +129,13 @@ namespace dvar_cheats
 	void set_client_dvar_by_string(const int entity_num, const char* value)
 	{
 		const auto* dvar = game::Scr_GetString(0); // grab the original dvar again since it's never stored on stack
+
+		// keep the server's authoritative per-client mechanics preference in sync with what we push to the client
+		if (dvar == "pm_improvedMechanicsClient"s)
+		{
+			mechanics::set_client_pref(entity_num, std::atoi(value) != 0);
+		}
+
 		const auto* command = utils::string::va("q %s \"%s\"", dvar, value);
 
 		game::engine::SV_GameSendServerCommand(static_cast<char>(entity_num), game::SV_CMD_RELIABLE, command);
@@ -169,6 +177,7 @@ namespace dvar_cheats
 			utils::hook::nop(0x1404C3A93, 4); // let our stub handle zero-source sets
 			utils::hook::jump(0x1404C3A9A, dvar_flag_checks_stub, true); // check extra dvar flags when setting values
 
+			utils::hook::nop(0x1402E2DEA, 5); // remove error in PlayerCmd_SetClientDvar for non-scriptinfo dvars
 			utils::hook::nop(0x1402E2E03, 5); // remove error in PlayerCmd_SetClientDvar if setting a non-network dvar
 			// don't check flags on the dvars, send any existing dvar instead
 			utils::hook::jump(0x1402E2E4A, player_cmd_set_client_dvar, true); // send non-network dvars as string
