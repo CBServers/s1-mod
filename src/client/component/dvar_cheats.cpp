@@ -6,6 +6,7 @@
 
 #include "console.hpp"
 #include "mechanics.hpp"
+#include "barrier_clips.hpp"
 
 #include <utils/hook.hpp>
 #include <utils/string.hpp>
@@ -134,6 +135,10 @@ namespace dvar_cheats
 		if (dvar == "pm_improvedMechanicsClient"s)
 		{
 			mechanics::set_client_pref(entity_num, std::atoi(value) != 0);
+		}
+		else if (dvar == "bg_disableBarrierClipsClient"s)
+		{
+			barrier_clips::set_client_pref(entity_num, std::atoi(value) != 0);
 		}
 
 		const auto* command = utils::string::va("q %s \"%s\"", dvar, value);

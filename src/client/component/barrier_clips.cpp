@@ -1,6 +1,8 @@
 #include <std_include.hpp>
 #include "loader/component_loader.hpp"
 
+#include "barrier_clips.hpp"
+
 #include "game/game.hpp"
 
 #include <utils/hook.hpp>
@@ -18,16 +20,46 @@ namespace barrier_clips
 
 		constexpr auto ADDR_PMOVE_SINGLE = 0x14014AA70;
 
+		constexpr auto MAX_CLIENTS = 18;
+
 		const game::dvar_t* bg_disableBarrierClips = nullptr;
+		const game::dvar_t* bg_disableBarrierClipsClient = nullptr;
+		const game::dvar_t* sv_running = nullptr;
+
+		// authoritative per-client preference, kept in sync server-side (see set_client_pref)
+		bool client_pref[MAX_CLIENTS] = {};
 
 		utils::hook::detour pmove_single_hook;
 
+		bool enabled(void* ps)
+		{
+			if (bg_disableBarrierClips != nullptr && bg_disableBarrierClips->current.enabled)
+			{
+				return true; // server master switch forces the barrier clips off for everyone
+			}
+
+			if (sv_running == nullptr)
+			{
+				sv_running = game::Dvar_FindVar("sv_running");
+			}
+
+			if (sv_running != nullptr && sv_running->current.enabled)
+			{
+				// running the authoritative sim: honour this client's own preference (ps+0 is the client num)
+				const int client_num = *reinterpret_cast<std::uint16_t*>(ps);
+				return client_num < MAX_CLIENTS && client_pref[client_num];
+			}
+
+			// remote client: only ever predicts the local player, so use our own local preference
+			return bg_disableBarrierClipsClient != nullptr && bg_disableBarrierClipsClient->current.enabled;
+		}
+
 		void pmove_single_stub(void* pm)
 		{
-			if (bg_disableBarrierClips && bg_disableBarrierClips->current.enabled && pm != nullptr)
+			if (pm != nullptr)
 			{
 				auto* ps = *reinterpret_cast<void**>(pm); // pmove_t::ps
-				if (ps != nullptr
+				if (ps != nullptr && enabled(ps)
 					&& (*reinterpret_cast<int*>(static_cast<char*>(ps) + PS_PM_FLAGS) & PMF_LADDER) == 0)
 				{
 					auto& tracemask = *reinterpret_cast<int*>(static_cast<char*>(pm) + PM_TRACEMASK);
@@ -37,6 +69,14 @@ namespace barrier_clips
 			}
 
 			pmove_single_hook.invoke<void>(pm);
+		}
+	}
+
+	void set_client_pref(const int client_num, const bool value)
+	{
+		if (client_num >= 0 && client_num < MAX_CLIENTS)
+		{
+			client_pref[client_num] = value;
 		}
 	}
 
@@ -52,9 +92,13 @@ namespace barrier_clips
 
 			pmove_single_hook.create(ADDR_PMOVE_SINGLE, &pmove_single_stub);
 
-			// "Disable player collision with out of bound barriers"
+			// server master switch: "Disable player collision with out of bound barriers" for everyone
 			bg_disableBarrierClips = game::Dvar_RegisterBool("bg_disableBarrierClips", false,
 				game::DVAR_FLAG_REPLICATED);
+
+			// per-client opt-in; pushed by the server via `self setclientdvar("bg_disableBarrierClipsClient", 1)`
+			bg_disableBarrierClipsClient = game::Dvar_RegisterBool("bg_disableBarrierClipsClient", false,
+				game::DVAR_FLAG_NONE);
 		}
 	};
 }
