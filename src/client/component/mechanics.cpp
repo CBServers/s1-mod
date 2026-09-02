@@ -163,8 +163,9 @@ namespace mechanics
 				game::DVAR_FLAG_REPLICATED);
 
 			// per-client opt-in; pushed by the server via `self setclientdvar("pm_improvedMechanicsClient", 1)`
+			// SCRIPTINFO so setclientdvar accepts it without relaxing the engine's check for every other dvar
 			pm_improvedMechanicsClient = game::Dvar_RegisterBool("pm_improvedMechanicsClient", false,
-				game::DVAR_FLAG_NONE);
+				game::DVAR_FLAG_SCRIPTINFO);
 		}
 	};
 }

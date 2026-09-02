@@ -97,8 +97,9 @@ namespace barrier_clips
 				game::DVAR_FLAG_REPLICATED);
 
 			// per-client opt-in; pushed by the server via `self setclientdvar("bg_disableBarrierClipsClient", 1)`
+			// SCRIPTINFO so setclientdvar accepts it without relaxing the engine's check for every other dvar
 			bg_disableBarrierClipsClient = game::Dvar_RegisterBool("bg_disableBarrierClipsClient", false,
-				game::DVAR_FLAG_NONE);
+				game::DVAR_FLAG_SCRIPTINFO);
 		}
 	};
 }

@@ -182,7 +182,9 @@ namespace dvar_cheats
 			utils::hook::nop(0x1404C3A93, 4); // let our stub handle zero-source sets
 			utils::hook::jump(0x1404C3A9A, dvar_flag_checks_stub, true); // check extra dvar flags when setting values
 
-			utils::hook::nop(0x1402E2DEA, 5); // remove error in PlayerCmd_SetClientDvar for non-scriptinfo dvars
+			// NOTE: the scriptinfo check at 0x1402E2DEA is intentionally left intact. Our client dvars are
+			// registered DVAR_FLAG_SCRIPTINFO so they pass it; nopping it let stock GSC override protected
+			// dvars like cg_fovScale on clients.
 			utils::hook::nop(0x1402E2E03, 5); // remove error in PlayerCmd_SetClientDvar if setting a non-network dvar
 			// don't check flags on the dvars, send any existing dvar instead
 			utils::hook::jump(0x1402E2E4A, player_cmd_set_client_dvar, true); // send non-network dvars as string
