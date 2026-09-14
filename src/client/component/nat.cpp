@@ -8,6 +8,7 @@
 #include "network.hpp"
 #include "party.hpp"
 #include "scheduler.hpp"
+#include "toast.hpp"
 #include "upnp.hpp"
 
 #include "game/ui_scripting/execution.hpp"
@@ -27,11 +28,13 @@ namespace nat
 		game::dvar_t* rendezvous_ip{};
 		game::dvar_t* rendezvous_port{};
 		game::dvar_t* nat_open_dvar{};
+		game::dvar_t* auto_open_dvar{};
 
 		constexpr auto JOINED_TOKEN_GRACE = 15s;
 
 		// All state below is touched only on the main thread, so no locking is needed.
 		bool hosting_enabled{}; // host opted in via nat_host; mirrored into the nat_open dvar
+		bool auto_open_applied{}; // nat_autoOpen fires once per match, so a later manual close sticks
 		std::string host_token{}; // non-empty while hosting
 		std::string hosted_token{}; // last host_token, retained across a close so the match keeps its identity
 		std::string joined_token{}; // token of the punched session we joined; cleared when we leave
@@ -458,6 +461,7 @@ namespace nat
 			hosting_enabled = enabled;
 			if (enabled)
 			{
+				auto_open_applied = true; // any open uses up this match's auto-open
 				upnp::ensure_mapped(); // retry a startup mapping the router was too slow for
 			}
 
@@ -480,6 +484,13 @@ namespace nat
 			{
 				// Left the match: the identity dies with it, unlike a mere close to friends.
 				hosted_token.clear();
+				auto_open_applied = false;
+			}
+			else if (!hosting_enabled && !auto_open_applied && auto_open_dvar && auto_open_dvar->current.enabled)
+			{
+				// Opted in from the private match lobby's match settings before starting.
+				set_hosting_enabled(true);
+				toast::show("OPEN TO FRIENDS", "Friends can now join this match.");
 			}
 
 			if (is_hosting() && hosting_enabled)
@@ -538,6 +549,32 @@ namespace nat
 	std::string current_token()
 	{
 		return host_token;
+	}
+
+	bool can_open_to_friends()
+	{
+		return is_hosting() && !hosting_enabled;
+	}
+
+	bool open_to_friends()
+	{
+		if (!is_hosting())
+		{
+			return false;
+		}
+
+		if (!hosting_enabled)
+		{
+			set_hosting_enabled(true);
+		}
+
+		// A repeated open-match must not re-run registration; a toggle still waiting on its token registers now.
+		if (host_token.empty())
+		{
+			update_host_session();
+		}
+
+		return true;
 	}
 
 	std::string hosted_session_token()
@@ -639,6 +676,7 @@ namespace nat
 				rendezvous_port = game::Dvar_RegisterString("rendezvousServerPort", "20810",
 					game::DVAR_FLAG_NONE);
 				nat_open_dvar = game::Dvar_RegisterBool("nat_open", false, game::DVAR_FLAG_NONE);
+				auto_open_dvar = game::Dvar_RegisterBool("nat_autoOpen", false, game::DVAR_FLAG_NONE);
 
 				game::netadr_s warm{};
 				get_rendezvous_server(warm); // kick the async DNS resolve so first use hits the cache
