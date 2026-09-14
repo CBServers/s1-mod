@@ -21,6 +21,7 @@ namespace game
 	WEAK symbol<void(errorParm code, const char* message, ...)> Com_Error{0x1402F7570, 0x1403CE480};
 	WEAK symbol<void()> Com_Frame_Try_Block_Function{0x1402F7E10, 0x1403CEF30};
 	WEAK symbol<CodPlayMode()> Com_GetCurrentCoDPlayMode{0, 0x1404C9690};
+	WEAK symbol<void(const char* message, const char* titleKey)> Com_SetErrorMessage{0, 0x1403D0EF0};
 	WEAK symbol<void(float, float, int)> Com_SetSlowMotion{0, 0x1403D19B0};
 	WEAK symbol<void()> Com_Quit_f{0x1402F9390, 0x1403D08C0};
 	WEAK symbol<void(const char* finalmsg)> Com_Shutdown{0x0, 0x1403D1BF0};
