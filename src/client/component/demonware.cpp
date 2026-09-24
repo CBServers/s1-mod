@@ -340,10 +340,11 @@ namespace demonware
 			}
 		}
 
+		game::dvar_t* bd_logger_enabled = nullptr;
+
 		void bd_logger_stub(const char* const function, const char* const msg, ...)
 		{
-			static const auto* bd_logger_enabled = game::Dvar_RegisterBool("bd_logger_enabled", false, game::DVAR_FLAG_NONE);
-			if (!bd_logger_enabled->current.enabled)
+			if (!bd_logger_enabled || !bd_logger_enabled->current.enabled)
 			{
 				return;
 			}
@@ -411,6 +412,8 @@ namespace demonware
 
 		void post_unpack() override
 		{
+			// Registering lazily from the stub crashes when DW logs during exit after Sys_Error tore down the dvar guard
+			bd_logger_enabled = game::Dvar_RegisterBool("bd_logger_enabled", false, game::DVAR_FLAG_NONE);
 			utils::hook::jump(SELECT_VALUE(0x140575880, 0x1406C0080), bd_logger_stub);
 
 			if (game::environment::is_sp())

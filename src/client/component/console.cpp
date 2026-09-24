@@ -82,6 +82,45 @@ namespace console
 			return current_queue;
 		}
 
+		void flush_message_queue()
+		{
+			std::string message_buffer{};
+			auto current_queue = empty_message_queue();
+
+			while (!current_queue.empty())
+			{
+				const auto& msg = current_queue.front();
+				message_buffer.append(msg);
+				current_queue.pop();
+			}
+
+			if (!message_buffer.empty())
+			{
+				print_message(message_buffer.data());
+			}
+		}
+
+		utils::hook::detour sys_error_hook;
+
+		void sys_error_stub(const char* error, ...)
+		{
+			char buffer[4096]{};
+
+			va_list ap;
+			va_start(ap, error);
+			vsnprintf(buffer, sizeof(buffer), error, ap);
+			va_end(ap);
+
+			// Errors during Com_Init fire before the IO runner starts, so show what it hasn't printed yet
+			if (game::Sys_IsMainThread())
+			{
+				game::Sys_ShowConsole();
+			}
+
+			flush_message_queue();
+			sys_error_hook.invoke<void>("%s", buffer);
+		}
+
 		void print_stub(const char* fmt, ...)
 		{
 			char buffer[4096]{};
@@ -134,6 +173,8 @@ namespace console
 				return;
 			}
 
+			sys_error_hook.create(game::Sys_Error, sys_error_stub);
+
 			terminate_runner_ = false;
 
 			this->message_runner_ = utils::thread::create_named_thread("Console IO", []
@@ -145,21 +186,7 @@ namespace console
 
 				while (!terminate_runner_)
 				{
-					std::string message_buffer{};
-					auto current_queue = empty_message_queue();
-
-					while (!current_queue.empty())
-					{
-						const auto& msg = current_queue.front();
-						message_buffer.append(msg);
-						current_queue.pop();
-					}
-
-					if (!message_buffer.empty())
-					{
-						print_message(message_buffer.data());
-					}
-
+					flush_message_queue();
 					std::this_thread::sleep_for(5ms);
 				}
 			});
