@@ -27,6 +27,10 @@ namespace mechanics
 		constexpr auto WS_WEAPONSTATE = 16;
 
 		constexpr int WEAP_ANIM_IDLE = 1;
+		constexpr int WEAPON_DROPPING_ALT = 5;
+
+		constexpr auto BUTTON_ALT_WEAPON = 0x400000;
+		constexpr auto WEAPFLAG_ALT_MODE = 0x4000;
 
 		constexpr auto ADDR_PM_BEGIN_WEAPON_CHANGE = 0x140154AB0;
 		constexpr auto ADDR_PM_WEAPON_CHECK_FOR_CHANGE = 0x140158DA0;
@@ -34,6 +38,8 @@ namespace mechanics
 		constexpr auto ADDR_BG_CLEAR_DROP_WEAPON_ANIM = 0x14012BD10;
 		constexpr auto ADDR_PM_IS_SPRINTING = 0x140146050;
 		constexpr auto ADDR_SPRINT_STATE_RAISE = 0x140160F00;
+		constexpr auto ADDR_BG_WEAPON_HAS_ALT_MODE = 0x14016CF10;
+		constexpr auto ADDR_CG_UPDATE_VIEW_MODEL = 0x1401EDDF0;
 
 		constexpr auto MAX_CLIENTS = 18;
 
@@ -46,6 +52,7 @@ namespace mechanics
 
 		utils::hook::detour pm_begin_weapon_change_hook;
 		utils::hook::detour pm_weapon_check_for_change_weapon_hook;
+		utils::hook::detour cg_update_view_model_hook;
 
 		bool enabled(void* ps)
 		{
@@ -106,7 +113,14 @@ namespace mechanics
 		{
 			auto* ps = *reinterpret_cast<void**>(pm);
 
+			// S1 alt-mode toggles are same-weapon changes; cancelling them desyncs the alt flag from the cmd
+			const auto buttons = *reinterpret_cast<int*>(static_cast<char*>(pm) + PM_CMD_BUTTONS);
+			const auto wants_alt = (buttons & BUTTON_ALT_WEAPON) != 0;
+			const auto in_alt = (ps_field(ps, PS_WEAPFLAGS) & WEAPFLAG_ALT_MODE) != 0;
+			const auto alt_toggle = wants_alt != in_alt || weap_field(ps, 0, WS_WEAPONSTATE) == WEAPON_DROPPING_ALT;
+
 			if (enabled(ps)
+				&& !alt_toggle
 				&& ps_field(ps, PS_WEAPON) == *reinterpret_cast<int*>(static_cast<char*>(pm) + PM_CMD_WEAPON)
 				&& static_cast<unsigned int>(weap_field(ps, 0, WS_WEAPONSTATE) - 3) <= 2
 				&& utils::hook::invoke<__int64>(ADDR_PM_WEAPON_INVALID_CHANGE_STATE, pm) != 0
@@ -135,6 +149,28 @@ namespace mechanics
 
 			pm_weapon_check_for_change_weapon_hook.invoke<void>(pm, holdrand, a3);
 		}
+
+		__int64 cg_update_view_model_stub(const unsigned int local_client_num, void* ps, const unsigned int weapon,
+			void* a4, const int a5, void* a6, const char a7, const char a8, const char a9)
+		{
+			// the alt anim set is only built for weapons with an alt mode, so a stale alt flag would build from NULL anims
+			const auto mask_alt = ps != nullptr && (ps_field(ps, PS_WEAPFLAGS) & WEAPFLAG_ALT_MODE) != 0
+				&& !utils::hook::invoke<bool>(ADDR_BG_WEAPON_HAS_ALT_MODE, weapon);
+
+			if (mask_alt)
+			{
+				ps_field(ps, PS_WEAPFLAGS) &= ~WEAPFLAG_ALT_MODE;
+			}
+
+			const auto result = cg_update_view_model_hook.invoke<__int64>(local_client_num, ps, weapon, a4, a5, a6, a7, a8, a9);
+
+			if (mask_alt)
+			{
+				ps_field(ps, PS_WEAPFLAGS) |= WEAPFLAG_ALT_MODE;
+			}
+
+			return result;
+		}
 	}
 
 	void set_client_pref(const int client_num, const bool value)
@@ -158,6 +194,11 @@ namespace mechanics
 			pm_begin_weapon_change_hook.create(ADDR_PM_BEGIN_WEAPON_CHANGE, &pm_begin_weapon_change_stub);
 			pm_weapon_check_for_change_weapon_hook.create(ADDR_PM_WEAPON_CHECK_FOR_CHANGE,
 				&pm_weapon_check_for_change_weapon_stub);
+
+			if (!game::environment::is_dedi())
+			{
+				cg_update_view_model_hook.create(ADDR_CG_UPDATE_VIEW_MODEL, &cg_update_view_model_stub);
+			}
 
 			pm_improvedMechanics = game::Dvar_RegisterBool("pm_improvedMechanics", false,
 				game::DVAR_FLAG_REPLICATED);

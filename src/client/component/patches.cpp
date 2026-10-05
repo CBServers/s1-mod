@@ -230,6 +230,9 @@ namespace patches
 			LoadLibraryA("PhysXDevice64.dll");
 			LoadLibraryA("PhysXUpdateLoader64.dll");
 
+			// XAudio 2.7's DllCanUnloadNow ignores live engines, so COM can free it under Bink's audio thread
+			LoadLibraryExA("XAudio2_7.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+
 			// Register dvars
 			com_register_dvars_hook.create(SELECT_VALUE(0x1402F86F0, 0x1403CF7F0), &com_register_dvars_stub);
 
