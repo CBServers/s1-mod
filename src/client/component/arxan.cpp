@@ -155,6 +155,9 @@ namespace arxan
 			utils::hook::jump(0x14053CCB0, 0x14053CCC0); // dwGetLogonStatus
 			utils::hook::call(0x14053CD04, 0x14053CCC0); // dwGetLogonStatus
 
+			// MSG_ReadDeltaEntity's thunk junk `xor ebx` pair truncates the caller's rbx above 4GB; skip it
+			utils::hook::jump(0x1403D76F0, 0x15121E509);
+
 			//scheduler::on_game_initialized(remove_hardware_breakpoints, scheduler::pipeline::main);
 		}
 	};
