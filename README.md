@@ -38,6 +38,14 @@ Only the x64 platform is supported. Do not attempt to build for Windows ARM 64 o
 | `--copy-to=PATH`            | Optional, copy the EXE to a custom folder after build, define the path here if wanted. |
 | `--dev-build`               | Enable development builds of the client. |
 
+### Experimental Campaign SP fastfile probe
+
+Singleplayer builds register a manual `loadzone <fastfile_basename>` diagnostic command. It is disabled by default; enable it explicitly with `set sp_testLoadZoneEnabled 1`. The command accepts only a 1-64 character ASCII basename containing letters, digits, `_` or `-`, and only runs in Singleplayer after the asset database reports ready.
+
+This is an experimental test hook, not a supported mod loader. It calls `DB_LoadXAssets` with `DB_ZONE_COMMON`, `freeFlags = 0`, and `DB_LOAD_SYNC`, following an upstream source precedent. Before testing, put the candidate `<fastfile_basename>.ff` in `sp_test_zones/` under the process working directory in a disposable staging tree. The hook tries the engine's normal lookup first, then falls back to that exact staged file only for the active test load; all other file requests pass through unchanged. No files are copied or installed by this change.
+
+The SP flags, engine lookup behavior, and zone lifetime across map transitions still require runtime validation. This command does not auto-load from GSC or enable the weapon shop's `scr_sp_campaign_weapon_shop_assets_ready` gate. Do not treat the Campaign purchase flow as verified.
+
 ## Disclaimer
 
 This software has been created purely for the purposes of

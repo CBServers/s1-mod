@@ -7,6 +7,12 @@
 #include "console.hpp"
 #include "mods.hpp"
 
+#include <mutex>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <system_error>
+
 #include <utils/hook.hpp>
 #include <utils/string.hpp>
 
@@ -15,6 +21,71 @@ namespace mods
 	namespace
 	{
 		utils::hook::detour sys_create_file_hook;
+		utils::hook::detour sp_test_sys_create_file_hook;
+
+		struct sp_test_zone_request
+		{
+			std::string filename;
+			std::string path;
+		};
+
+		std::mutex sp_test_zone_request_mutex;
+		std::optional<sp_test_zone_request> active_sp_test_zone_request;
+
+		class scoped_sp_test_zone_request
+		{
+		public:
+			explicit scoped_sp_test_zone_request(sp_test_zone_request request)
+			{
+				std::lock_guard lock(sp_test_zone_request_mutex);
+				if (active_sp_test_zone_request.has_value())
+				{
+					return;
+				}
+
+				active_sp_test_zone_request = std::move(request);
+				this->active_ = true;
+			}
+
+			~scoped_sp_test_zone_request()
+			{
+				if (!this->active_)
+				{
+					return;
+				}
+
+				std::lock_guard lock(sp_test_zone_request_mutex);
+				active_sp_test_zone_request.reset();
+			}
+
+			scoped_sp_test_zone_request(const scoped_sp_test_zone_request&) = delete;
+			scoped_sp_test_zone_request& operator=(const scoped_sp_test_zone_request&) = delete;
+
+			bool active() const
+			{
+				return this->active_;
+			}
+
+		private:
+			bool active_{};
+		};
+
+		std::optional<sp_test_zone_request> get_active_sp_test_zone_request(const char* base_filename)
+		{
+			if (base_filename == nullptr)
+			{
+				return std::nullopt;
+			}
+
+			std::lock_guard lock(sp_test_zone_request_mutex);
+			if (!active_sp_test_zone_request.has_value() ||
+				active_sp_test_zone_request->filename != base_filename)
+			{
+				return std::nullopt;
+			}
+
+			return active_sp_test_zone_request;
+		}
 
 		void db_build_os_path_from_source(const char* zone_name, const game::FF_DIR source, const int size, char* filename)
 		{
@@ -124,6 +195,32 @@ namespace mods
 			return result;
 		}
 
+		game::Sys_File sp_test_sys_create_file_stub(game::Sys_Folder folder, const char* base_filename)
+		{
+			auto result = sp_test_sys_create_file_hook.invoke<game::Sys_File>(folder, base_filename);
+
+			if (result.handle != INVALID_HANDLE_VALUE || folder != game::SF_ZONE || !game::environment::is_sp())
+			{
+				return result;
+			}
+
+			const auto request = get_active_sp_test_zone_request(base_filename);
+			if (!request.has_value())
+			{
+				return result;
+			}
+
+			result.handle = game::Sys_OpenFileReliable(request->path.c_str());
+			if (result.handle == INVALID_HANDLE_VALUE)
+			{
+				console::error("Failed to open the preflighted SP test fastfile '%s'.\n", request->path.c_str());
+				return result;
+			}
+
+			console::info("Opened SP test fastfile fallback '%s'.\n", request->path.c_str());
+			return result;
+		}
+
 		void db_load_x_assets_stub(game::XZoneInfo* zone_info, unsigned int zone_count, game::DBSyncMode sync_mode)
 		{
 			std::vector<game::XZoneInfo> zones(zone_info, zone_info + zone_count);
@@ -134,6 +231,114 @@ namespace mods
 			}
 
 			game::DB_LoadXAssets(zones.data(), static_cast<unsigned int>(zones.size()), sync_mode);
+		}
+
+		constexpr bool is_valid_fastfile_basename(const std::string_view name)
+		{
+			if (name.empty() || name.size() > 64)
+			{
+				return false;
+			}
+
+			for (const auto character : name)
+			{
+				const auto is_ascii_letter = (character >= 'a' && character <= 'z') ||
+					(character >= 'A' && character <= 'Z');
+				const auto is_ascii_digit = character >= '0' && character <= '9';
+				if (!is_ascii_letter && !is_ascii_digit && character != '_' && character != '-')
+				{
+					return false;
+				}
+			}
+
+			return true;
+		}
+
+		static_assert(is_valid_fastfile_basename("campaign_mp_weapons_fxfix_pointerfixed_r1"));
+		static_assert(!is_valid_fastfile_basename("../campaign_mp_weapons"));
+		static_assert(!is_valid_fastfile_basename("campaign_mp_weapons.ff"));
+		static_assert(!is_valid_fastfile_basename("campaign_mp_weapons\\zone"));
+
+		void load_sp_test_zone(const char* zone_name)
+		{
+			std::error_code path_error;
+			const auto staging_root = std::filesystem::current_path(path_error);
+			if (path_error)
+			{
+				const auto error_message = path_error.message();
+				console::error("Unable to resolve the working directory for SP test zones: %s\n", error_message.c_str());
+				return;
+			}
+
+			const auto zone_path = (staging_root / "sp_test_zones" / (std::string(zone_name) + ".ff")).string();
+			console::info("Resolved SP test fastfile path: '%s'\n", zone_path.c_str());
+
+			const auto preflight_handle = game::Sys_OpenFileReliable(zone_path.c_str());
+			if (preflight_handle == INVALID_HANDLE_VALUE)
+			{
+				console::error("SP test fastfile is missing or unreadable: '%s'\n", zone_path.c_str());
+				return;
+			}
+
+			::CloseHandle(preflight_handle);
+
+			{
+				scoped_sp_test_zone_request active_request{{std::string(zone_name) + ".ff", zone_path}};
+				if (!active_request.active())
+				{
+					console::error("Another SP test fastfile load is already active.\n");
+					return;
+				}
+
+				console::warn("EXPERIMENTAL: loading SP test fastfile '%s'. SP flags, lookup and zone residency still require runtime validation.\n", zone_name);
+
+				game::XZoneInfo zone_info{zone_name, game::DB_ZONE_COMMON, 0};
+				game::DB_LoadXAssets(&zone_info, 1U, game::DB_LOAD_SYNC);
+			}
+
+			console::info("loadzone returned for '%s'; verify asset visibility and map-transition residency manually.\n", zone_name);
+		}
+
+		void register_sp_loadzone_test_command()
+		{
+			const auto* enabled = game::Dvar_RegisterBool("sp_testLoadZoneEnabled", false, game::DVAR_FLAG_NONE);
+
+			command::add("loadzone", [enabled](const command::params& params)
+			{
+				if (!game::environment::is_sp())
+				{
+					console::error("loadzone is only available in Singleplayer.\n");
+					return;
+				}
+
+				if (params.size() != 2)
+				{
+					console::info("USAGE: loadzone <fastfile_basename>\n");
+					console::info("Enable this experimental command with: set sp_testLoadZoneEnabled 1\n");
+					return;
+				}
+
+				if (enabled == nullptr || !enabled->current.enabled)
+				{
+					console::error("loadzone is disabled; set sp_testLoadZoneEnabled 1 to opt in.\n");
+					return;
+				}
+
+				if (!game::Sys_IsDatabaseReady2())
+				{
+					console::error("loadzone requires the asset database to be ready.\n");
+					return;
+				}
+
+				const auto* zone_name = params.get(1);
+				if (!is_valid_fastfile_basename(zone_name))
+				{
+					console::error("Invalid fastfile basename. Use 1-64 ASCII letters, digits, '_' or '-'; omit paths and '.ff'.\n");
+					return;
+				}
+
+				load_sp_test_zone(zone_name);
+			});
 		}
 	}
 
@@ -177,6 +382,8 @@ namespace mods
 
 			if (game::environment::is_sp())
 			{
+				sp_test_sys_create_file_hook.create(game::Sys_CreateFile, sp_test_sys_create_file_stub);
+				register_sp_loadzone_test_command();
 				return;
 			}
 
