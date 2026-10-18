@@ -50,7 +50,7 @@ jobs:
         run: msbuild /m /v:minimal /p:Configuration=${{matrix.configuration}} /p:Platform=x64 build/s1x.sln
 
       - name: Upload ${{matrix.configuration}} binary
-        if: matrix.configuration == 'Release' && github.repository_owner == 'CBServers' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/develop')
+        if: matrix.configuration == 'Release' && github.event_name == 'push' && (github.repository_owner != 'CBServers' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/develop')
         uses: actions/upload-artifact@v4.4.0
         with:
           name: ${{matrix.configuration}} Binary
@@ -58,7 +58,7 @@ jobs:
             build/bin/x64/${{matrix.configuration}}/s1x.exe
             
       - name: Upload ${{matrix.configuration}} data artifacts
-        if: matrix.configuration == 'Release' && github.repository_owner == 'CBServers' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/develop')
+        if: matrix.configuration == 'Release' && github.event_name == 'push' && (github.repository_owner != 'CBServers' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/develop')
         uses: actions/upload-artifact@v4.4.0
         with:
           name: ${{matrix.configuration}} data artifacts
