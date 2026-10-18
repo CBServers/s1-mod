@@ -199,7 +199,7 @@ namespace mods
 		{
 			auto result = sp_test_sys_create_file_hook.invoke<game::Sys_File>(folder, base_filename);
 
-			if (result.handle != INVALID_HANDLE_VALUE || !game::environment::is_sp())
+			if (result.handle != INVALID_HANDLE_VALUE || folder != game::SF_ZONE || !game::environment::is_sp())
 			{
 				return result;
 			}
