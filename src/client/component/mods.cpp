@@ -7,6 +7,8 @@
 #include "console.hpp"
 #include "mods.hpp"
 
+#include <string_view>
+
 #include <utils/hook.hpp>
 #include <utils/string.hpp>
 
@@ -135,6 +137,79 @@ namespace mods
 
 			game::DB_LoadXAssets(zones.data(), static_cast<unsigned int>(zones.size()), sync_mode);
 		}
+
+		constexpr bool is_valid_fastfile_basename(const std::string_view name)
+		{
+			if (name.empty() || name.size() > 64)
+			{
+				return false;
+			}
+
+			for (const auto character : name)
+			{
+				const auto is_ascii_letter = (character >= 'a' && character <= 'z') ||
+					(character >= 'A' && character <= 'Z');
+				const auto is_ascii_digit = character >= '0' && character <= '9';
+				if (!is_ascii_letter && !is_ascii_digit && character != '_' && character != '-')
+				{
+					return false;
+				}
+			}
+
+			return true;
+		}
+
+		static_assert(is_valid_fastfile_basename("campaign_mp_weapons_fxfix_pointerfixed_r1"));
+		static_assert(!is_valid_fastfile_basename("../campaign_mp_weapons"));
+		static_assert(!is_valid_fastfile_basename("campaign_mp_weapons.ff"));
+		static_assert(!is_valid_fastfile_basename("campaign_mp_weapons\\zone"));
+
+		void register_sp_loadzone_test_command()
+		{
+			const auto* enabled = game::Dvar_RegisterBool("sp_testLoadZoneEnabled", false, game::DVAR_FLAG_NONE);
+
+			command::add("loadzone", [enabled](const command::params& params)
+			{
+				if (!game::environment::is_sp())
+				{
+					console::error("loadzone is only available in Singleplayer.\n");
+					return;
+				}
+
+				if (params.size() != 2)
+				{
+					console::info("USAGE: loadzone <fastfile_basename>\n");
+					console::info("Enable this experimental command with: set sp_testLoadZoneEnabled 1\n");
+					return;
+				}
+
+				if (enabled == nullptr || !enabled->current.enabled)
+				{
+					console::error("loadzone is disabled; set sp_testLoadZoneEnabled 1 to opt in.\n");
+					return;
+				}
+
+				if (!game::Sys_IsDatabaseReady2())
+				{
+					console::error("loadzone requires the asset database to be ready.\n");
+					return;
+				}
+
+				const auto* zone_name = params.get(1);
+				if (!is_valid_fastfile_basename(zone_name))
+				{
+					console::error("Invalid fastfile basename. Use 1-64 ASCII letters, digits, '_' or '-'; omit paths and '.ff'.\n");
+					return;
+				}
+
+				console::warn("EXPERIMENTAL: loadzone uses DB_ZONE_COMMON, freeFlags=0 and DB_LOAD_SYNC. SP flags, file lookup and zone residency are unverified.\n");
+
+				game::XZoneInfo zone_info{zone_name, game::DB_ZONE_COMMON, 0};
+				game::DB_LoadXAssets(&zone_info, 1U, game::DB_LOAD_SYNC);
+
+				console::info("Requested fastfile '%s'; verify its assets and map-transition residency manually.\n", zone_name);
+			});
+		}
 	}
 
 	bool is_using_mods()
@@ -177,6 +252,7 @@ namespace mods
 
 			if (game::environment::is_sp())
 			{
+				register_sp_loadzone_test_command();
 				return;
 			}
 

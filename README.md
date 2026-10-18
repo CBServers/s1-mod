@@ -38,6 +38,12 @@ Only the x64 platform is supported. Do not attempt to build for Windows ARM 64 o
 | `--copy-to=PATH`            | Optional, copy the EXE to a custom folder after build, define the path here if wanted. |
 | `--dev-build`               | Enable development builds of the client. |
 
+### Experimental Campaign SP fastfile probe
+
+Singleplayer builds register a manual `loadzone <fastfile_basename>` diagnostic command. It is disabled by default; enable it explicitly with `set sp_testLoadZoneEnabled 1`. The command accepts only a 1-64 character ASCII basename containing letters, digits, `_` or `-`, and only runs in Singleplayer after the asset database reports ready.
+
+This is an experimental test hook, not a supported mod loader. It calls `DB_LoadXAssets` with `DB_ZONE_COMMON`, `freeFlags = 0`, and `DB_LOAD_SYNC`, following an upstream source precedent. The SP flags, the engine's standard fastfile lookup path, and zone lifetime across map transitions still require runtime validation. This change adds no custom SP fastfile path, does not auto-load from GSC, and does not enable the weapon shop's `scr_sp_campaign_weapon_shop_assets_ready` gate. Do not treat the Campaign purchase flow as verified.
+
 ## Disclaimer
 
 This software has been created purely for the purposes of
